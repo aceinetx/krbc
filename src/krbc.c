@@ -4,7 +4,7 @@ FILE *ofd;
 dword loop_stack[128];
 dword *loop_p;
 dword loop_c;
-char *repeat_start, *repeat_end;
+char *repeat_start, *repeat_end, *c;
 
 void do_repeat(void) {
   if (repeat_start != NULL && repeat_end != NULL) {
@@ -55,8 +55,17 @@ void do_repeat(void) {
   }
 }
 
+void do_repeating_op(void) {
+  if (repeat_start == NULL)
+    repeat_start = c;
+  else if (*repeat_start != *c) {
+    repeat_end = c;
+    do_repeat();
+    repeat_start = c;
+  }
+}
+
 int main(int argc, char **argv) {
-  char *c;
   byte *data;
 
   if (argc < 2) {
@@ -85,58 +94,22 @@ int main(int argc, char **argv) {
   while (*c) {
     switch (*c) {
     case '+':
-      if (repeat_start == NULL)
-        repeat_start = c;
-      else if (*repeat_start != *c) {
-        repeat_end = c;
-        do_repeat();
-        repeat_start = c;
-      }
+      do_repeating_op();
       break;
     case '-':
-      if (repeat_start == NULL)
-        repeat_start = c;
-      else if (*repeat_start != *c) {
-        repeat_end = c;
-        do_repeat();
-        repeat_start = c;
-      }
+      do_repeating_op();
       break;
     case '>':
-      if (repeat_start == NULL)
-        repeat_start = c;
-      else if (*repeat_start != *c) {
-        repeat_end = c;
-        do_repeat();
-        repeat_start = c;
-      }
+      do_repeating_op();
       break;
     case '<':
-      if (repeat_start == NULL)
-        repeat_start = c;
-      else if (*repeat_start != *c) {
-        repeat_end = c;
-        do_repeat();
-        repeat_start = c;
-      }
+      do_repeating_op();
       break;
     case ',':
-      if (repeat_start == NULL)
-        repeat_start = c;
-      else if (*repeat_start != *c) {
-        repeat_end = c;
-        do_repeat();
-        repeat_start = c;
-      }
+      do_repeating_op();
       break;
     case '.':
-      if (repeat_start == NULL)
-        repeat_start = c;
-      else if (*repeat_start != *c) {
-        repeat_end = c;
-        do_repeat();
-        repeat_start = c;
-      }
+      do_repeating_op();
       break;
     case '[':
       repeat_end = c;
