@@ -1,7 +1,6 @@
 #include <krbc.h>
 
 FILE *ofd;
-byte heap[1 << 32 / 2];
 dword loop_stack[128];
 dword *loop_p;
 dword loop_c;
@@ -59,8 +58,6 @@ void do_repeat(void) {
 int main(int argc, char **argv) {
   char *c;
   byte *data;
-
-  memset(heap, 0, sizeof(heap));
 
   if (argc < 2) {
     printf("krbc: no filename provided\n");
