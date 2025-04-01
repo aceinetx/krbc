@@ -12,28 +12,40 @@ void do_repeat(void) {
     count = repeat_end - repeat_start;
     switch (*repeat_start) {
     case '+':
-      if (count == 1)
+      if (count == 1) {
+        fprintf(ofd, "; +\n");
         fprintf(ofd, "inc byte [edi]\n");
-      else
+      } else {
+        fprintf(ofd, "; +(%d)\n", count);
         fprintf(ofd, "add byte [edi], %d\n", count);
+      }
       break;
     case '-':
-      if (count == 1)
+      if (count == 1) {
+        fprintf(ofd, "; -\n");
         fprintf(ofd, "dec byte [edi]\n");
-      else
+      } else {
+        fprintf(ofd, "; -(%d)\n", count);
         fprintf(ofd, "sub byte [edi], %d\n", count);
+      }
       break;
     case '>':
-      if (count == 1)
+      if (count == 1) {
+        fprintf(ofd, "; >\n");
         fprintf(ofd, "inc edi\n");
-      else
+      } else {
+        fprintf(ofd, "; >(%d)\n", count);
         fprintf(ofd, "add edi, %d\n", count);
+      }
       break;
     case '<':
-      if (count == 1)
+      if (count == 1) {
+        fprintf(ofd, "; <\n");
         fprintf(ofd, "dec edi\n");
-      else
+      } else {
+        fprintf(ofd, "; <(%d)\n", count);
         fprintf(ofd, "sub edi, %d\n", count);
+      }
       break;
     case ',':
       fprintf(ofd, "mov ecx, edi\n");
