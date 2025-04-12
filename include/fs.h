@@ -3,6 +3,6 @@
 
 #include <krbc.h>
 
-byte *fs_read(const char *filename, dword *out_size);
+byte* fs_read(const char* filename, dword* out_size);
 
 #endif
