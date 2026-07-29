@@ -1,49 +1,60 @@
+#include <errno.h>
+#include <getopt.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-typedef uint8_t byte;
-typedef uint32_t dword;
+void die(const char* s) {
+	puts(s);
+	abort();
+}
 
-byte* fs_read(const char* filename, dword* out_size) {
+void die_perror(const char* s) {
+	printf("%s: ", s);
+	die(strerror(errno));
+}
+
+char* fs_read(const char* filename, size_t* out_size) {
 	FILE* file;
-	long fileSize;
-	byte* buffer;
-	dword bytesRead;
+	size_t fileSize;
+	char* buffer;
+	size_t charsRead;
 
 	file = fopen(filename, "rb");
 	if (!file) {
-		return NULL;
+		die_perror("fopen");
 	}
 
-	fseek(file, 0, SEEK_END);
+	if (fseek(file, 0, SEEK_END)) {
+		die_perror("fseek");
+	}
+
 	fileSize = ftell(file);
-	fseek(file, 0, SEEK_SET);
-
 	if (fileSize < 0) {
-		fclose(file);
-		return NULL;
+		die_perror("ftell");
 	}
 
-	buffer = (byte*)malloc(fileSize + 1);
-	buffer[fileSize] = 0;
+	if (fseek(file, 0, SEEK_SET)) {
+		die_perror("fseek");
+	}
+
+	buffer = (char*)malloc(fileSize + 1);
 	if (!buffer) {
-		fclose(file);
-		return NULL;
+		die("out of memory");
 	}
 
-	bytesRead = fread(buffer, 1, fileSize, file);
-	if (bytesRead != fileSize) {
-		free(buffer);
-		fclose(file);
-		return NULL;
+	buffer[fileSize] = 0;
+
+	charsRead = fread(buffer, 1, fileSize, file);
+	if (charsRead != fileSize) {
+		die_perror("fread");
 	}
 
 	fclose(file);
 
 	if (out_size) {
-		*out_size = (dword)fileSize;
+		*out_size = (size_t)fileSize;
 	}
 
 	return buffer;
@@ -61,7 +72,7 @@ int opcount = 0;
 
 void build(FILE* ofd) {
 	int i;
-	dword loop_stack[128], *loop_p = loop_stack, loop_c = 0;
+	uint32_t loop_stack[128], *loop_p = loop_stack, loop_c = 0;
 	struct Op* op = ops;
 
 	fprintf(ofd, "format ELF executable\n");
@@ -75,9 +86,9 @@ void build(FILE* ofd) {
 		switch (op->type) {
 		case OP_MOD:
 			if (op->count > 0)
-				fprintf(ofd, "add byte [edi], %d\n", op->count);
+				fprintf(ofd, "add char [edi], %d\n", op->count);
 			else if (op->count < 0)
-				fprintf(ofd, "sub byte [edi], %d\n", 0 - op->count);
+				fprintf(ofd, "sub char [edi], %d\n", 0 - op->count);
 			break;
 		case OP_MOVE:
 			if (op->count > 0)
@@ -103,7 +114,7 @@ void build(FILE* ofd) {
 			loop_p += 1;
 			*loop_p = loop_c++;
 			fprintf(ofd, "l%d:\n", *loop_p);
-			fprintf(ofd, "cmp byte [edi], 0\n");
+			fprintf(ofd, "cmp char [edi], 0\n");
 			fprintf(ofd, "je e%d\n", *loop_p);
 			break;
 		case OP_LOOP_END:
@@ -172,8 +183,8 @@ void addop(struct Op op) {
 	ops[opcount++] = op;
 }
 
-void buildops(byte* code) {
-	byte* c = code;
+void buildops(char* code) {
+	char* c = code;
 	while (*c) {
 		switch (*c) {
 		case '+':
@@ -208,22 +219,34 @@ void buildops(byte* code) {
 }
 
 int main(int argc, char** argv) {
-	byte* code;
-	dword size, ops_size;
+	char* code;
+	size_t size, ops_size;
+	int opt;
+	char* output = "a.out";
 
-	if (argc < 2) {
-		printf("krbc: no filename provided\n");
-		return 1;
+	while ((opt = getopt(argc, argv, "o:h")) != -1) {
+		switch (opt) {
+		case 'o':
+			output = optarg;
+			break;
+		case 'h':
+		default:
+			goto usage;
+		}
 	}
 
-	code = fs_read(argv[1], &size);
-	if (!code) {
-		printf("krbc: no such file or directory\n");
-		return 1;
+	if (optind >= argc) {
+		goto usage;
 	}
+
+	code = fs_read(argv[optind], &size);
 
 	ops_size = (size + 1) * sizeof ops[0];
 	ops = malloc(ops_size);
+	if (!ops) {
+		die("out of memory");
+	}
+
 	memset(ops, 0, ops_size);
 
 	buildops(code);
@@ -232,8 +255,20 @@ int main(int argc, char** argv) {
 	while (optimize() > 0)
 		;
 
-	build(stdout);
+	FILE* fp = fopen(output, "w");
+	if (!fp) {
+		die_perror("fopen");
+	}
+
+	build(fp);
+
+	fclose(fp);
+
 	free(ops);
 
 	return 0;
+
+usage:
+	printf("usage: %s [-o output] [-h] name\n", argv[0]);
+	return 1;
 }
