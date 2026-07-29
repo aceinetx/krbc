@@ -90,13 +90,21 @@ void build(FILE* ofd) {
 	while (op->type != OP_NULL) {
 		switch (op->type) {
 		case OP_MOD:
-			if (op->count > 0)
+			if (op->count == 1)
+				fprintf(ofd, "inc byte [edi]\n");
+			else if (op->count == -1)
+				fprintf(ofd, "dec byte [edi]\n");
+			else if (op->count > 0)
 				fprintf(ofd, "add byte [edi], %d\n", op->count);
 			else if (op->count < 0)
 				fprintf(ofd, "sub byte [edi], %d\n", 0 - op->count);
 			break;
 		case OP_MOVE:
-			if (op->count > 0)
+			if (op->count == 1)
+				fprintf(ofd, "inc edi\n");
+			else if (op->count == -1)
+				fprintf(ofd, "dec edi\n");
+			else if (op->count > 0)
 				fprintf(ofd, "add edi, %d\n", op->count);
 			else if (op->count < 0)
 				fprintf(ofd, "sub edi, %d\n", 0 - op->count);
