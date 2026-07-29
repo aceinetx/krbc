@@ -1,6 +1,8 @@
+#define _XOPEN_SOURCE 600
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -237,9 +239,12 @@ int main(int argc, char** argv) {
 	int opt;
 	char* output = "a.out";
 	bool compile = false;
+	bool run = false;
 
-	while ((opt = getopt(argc, argv, "o:hc")) != -1) {
+	while ((opt = getopt(argc, argv, "o:hcr")) != -1) {
 		switch (opt) {
+		case 'r':
+			run = true;
 		case 'c':
 			compile = true;
 			break;
@@ -284,8 +289,13 @@ int main(int argc, char** argv) {
 	free(ops);
 
 	if (compile) {
-		pid_t pid = execlp("fasm", output, output, NULL);
-		waitpid(pid, NULL, WIFEXITED(0));
+		pid_t pid;
+		if ((pid = fork())) {
+			waitpid(pid, NULL, 0);
+		} else {
+			execvp("fasm", (char* const[]){output, output, NULL});
+		}
+
 		struct stat st;
 		if (stat(output, &st) == -1)
 			die_perror("stat");
@@ -293,11 +303,16 @@ int main(int argc, char** argv) {
 		m |= 0111;
 		if (chmod(output, m) == -1)
 			die_perror("chmod");
+
+		if (run) {
+			char* real = realpath(output, NULL);
+			pid = execv(real, (char* const[]){NULL});
+		}
 	}
 
 	return 0;
 
 usage:
-	printf("usage: %s [-o output] [-h] [-c] name\n", argv[0]);
+	printf("usage: %s [-o output] [-h] [-c] [-r] name\n", argv[0]);
 	return 1;
 }
