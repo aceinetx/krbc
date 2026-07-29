@@ -1,9 +1,14 @@
 #include <errno.h>
+#include <fcntl.h>
 #include <getopt.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 void die(const char* s) {
 	puts(s);
@@ -86,9 +91,9 @@ void build(FILE* ofd) {
 		switch (op->type) {
 		case OP_MOD:
 			if (op->count > 0)
-				fprintf(ofd, "add char [edi], %d\n", op->count);
+				fprintf(ofd, "add byte [edi], %d\n", op->count);
 			else if (op->count < 0)
-				fprintf(ofd, "sub char [edi], %d\n", 0 - op->count);
+				fprintf(ofd, "sub byte [edi], %d\n", 0 - op->count);
 			break;
 		case OP_MOVE:
 			if (op->count > 0)
@@ -114,7 +119,7 @@ void build(FILE* ofd) {
 			loop_p += 1;
 			*loop_p = loop_c++;
 			fprintf(ofd, "l%d:\n", *loop_p);
-			fprintf(ofd, "cmp char [edi], 0\n");
+			fprintf(ofd, "cmp byte [edi], 0\n");
 			fprintf(ofd, "je e%d\n", *loop_p);
 			break;
 		case OP_LOOP_END:
@@ -223,9 +228,13 @@ int main(int argc, char** argv) {
 	size_t size, ops_size;
 	int opt;
 	char* output = "a.out";
+	bool compile = false;
 
-	while ((opt = getopt(argc, argv, "o:h")) != -1) {
+	while ((opt = getopt(argc, argv, "o:hc")) != -1) {
 		switch (opt) {
+		case 'c':
+			compile = true;
+			break;
 		case 'o':
 			output = optarg;
 			break;
@@ -266,9 +275,21 @@ int main(int argc, char** argv) {
 
 	free(ops);
 
+	if (compile) {
+		pid_t pid = execlp("fasm", output, output, NULL);
+		waitpid(pid, NULL, WIFEXITED(0));
+		struct stat st;
+		if (stat(output, &st) == -1)
+			die_perror("stat");
+		mode_t m = st.st_mode & 07777;
+		m |= 0111;
+		if (chmod(output, m) == -1)
+			die_perror("chmod");
+	}
+
 	return 0;
 
 usage:
-	printf("usage: %s [-o output] [-h] name\n", argv[0]);
+	printf("usage: %s [-o output] [-h] [-c] name\n", argv[0]);
 	return 1;
 }
