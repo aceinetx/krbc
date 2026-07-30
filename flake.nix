@@ -34,6 +34,9 @@
           installPhase = ''
             mkdir -p $out/bin
             cp krbc $out/bin/
+
+            mkdir -p $out/share/man/man1
+            install -m 444 ./krbc.1 $out/share/man/man1/krbc.1
           '';
         };
 
