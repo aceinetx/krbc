@@ -438,6 +438,7 @@ int main(int argc, char** argv) {
 		switch (opt) {
 		case 'i':
 			do_interpret = true;
+			break;
 		case 'r':
 			do_run = true;
 		case 'c':
