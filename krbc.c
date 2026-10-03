@@ -461,6 +461,7 @@ int main(int argc, char** argv) {
 
 	if (do_interpret) {
 		interpret(NULL, NULL, NULL);
+		goto cleanup;
 	}
 
 	emit(output);
@@ -488,6 +489,7 @@ int main(int argc, char** argv) {
 		}
 	}
 
+cleanup:
 	free(ops);
 
 	return 0;
