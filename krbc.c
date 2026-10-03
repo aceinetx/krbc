@@ -12,6 +12,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+// #region die
+
 void die(const char* s) {
 	puts(s);
 	abort();
@@ -21,6 +23,10 @@ void die_perror(const char* s) {
 	printf("%s: ", s);
 	die(strerror(errno));
 }
+
+// #endregion
+
+// #region fs
 
 char* fs_read(const char* filename, size_t* out_size) {
 	FILE* file;
@@ -67,22 +73,27 @@ char* fs_read(const char* filename, size_t* out_size) {
 	return buffer;
 }
 
+// #endregion
+
+// #region compiler
+
 enum { OP_NULL = 0, OP_NOP, OP_MOD, OP_MOVE, OP_INPUT, OP_OUTPUT, OP_LOOP_BEGIN, OP_LOOP_END };
 
 struct Op {
-	int type;
-	int count;
+	unsigned int type : 3;
+	int count : 29;
 };
 
 struct Op* ops = NULL;
 int opcount = 0;
 
-void build(FILE* ofd) {
+void emit_fp(FILE* ofd) {
 	int i;
 	uint32_t loop_stack[128], *loop_p = loop_stack, loop_c = 0;
 	struct Op* op = ops;
 
 	fprintf(ofd, "format ELF executable\n");
+	fprintf(ofd, "entry _start\n");
 	fprintf(ofd, "_start:\n");
 	fprintf(ofd, "mov edi, mem\n");
 	fprintf(ofd, "mov ebx, 1\n");
@@ -233,35 +244,121 @@ void buildops(char* code) {
 	}
 }
 
-int main(int argc, char** argv) {
-	char* code;
-	size_t size, ops_size;
-	int opt;
-	char* output = "a.out";
-	bool compile = false;
-	bool run = false;
+// #endregion
 
-	while ((opt = getopt(argc, argv, "o:hcr")) != -1) {
-		switch (opt) {
-		case 'r':
-			run = true;
-		case 'c':
-			compile = true;
+// #region interpreter
+
+typedef void (*interpreter_output_func)(void* userdata, uint8_t cell);
+typedef uint8_t (*interpreter_input_func)(void* userdata);
+
+static uint8_t interpret_default_input_func(void* userdata) {
+	(void)userdata;
+	return getchar();
+}
+
+static void interpret_default_output_func(void* userdata, uint8_t cell) {
+	(void)userdata;
+	putchar(cell);
+}
+
+void interpret(void* userdata, interpreter_output_func output_f, interpreter_input_func input_f) {
+	if (output_f == NULL)
+		output_f = interpret_default_output_func;
+	if (input_f == NULL)
+		input_f = interpret_default_input_func;
+
+	uint8_t memory[30000];
+	size_t pointer = 0;
+
+	memset(memory, 0, sizeof memory);
+
+	// OP_NOP, OP_MOD, OP_MOVE, OP_INPUT, OP_OUTPUT, OP_LOOP_BEGIN, OP_LOOP_END
+	for (size_t i = 0;; i++) {
+		struct Op op = ops[i];
+		if (op.type == OP_NULL)
 			break;
-		case 'o':
-			output = optarg;
+
+		// printf("%u\n", op.type);
+
+		switch (op.type) {
+		case OP_NULL:
 			break;
-		case 'h':
-		default:
-			goto usage;
+		case OP_MOD:
+			memory[pointer] += op.count;
+			break;
+		case OP_MOVE:
+			pointer += op.count;
+			break;
+		case OP_INPUT:
+			while (op.count-- > 0)
+				memory[pointer] = input_f(userdata);
+			break;
+		case OP_OUTPUT:
+			while (op.count-- > 0)
+				output_f(userdata, memory[pointer]);
+			break;
+		case OP_LOOP_BEGIN:
+			if (memory[pointer] == 0) {
+				int loops = 0;
+				for (size_t j = i;; j++) {
+					struct Op op = ops[j];
+
+					if (op.type == OP_NULL)
+						die("interpret: unterminated loop");
+					switch (op.type) {
+					case OP_LOOP_BEGIN:
+						loops++;
+						break;
+					case OP_LOOP_END:
+						loops--;
+						break;
+					}
+					if (loops == 0) {
+						i = j;
+						break;
+					}
+				}
+			}
+			break;
+		case OP_LOOP_END:
+			if (memory[pointer] != 0) {
+				int loops = 0;
+
+				for (size_t j = i; j > 0; j--) {
+					struct Op op = ops[j];
+
+					switch (op.type) {
+					case OP_LOOP_BEGIN:
+						loops--;
+						break;
+					case OP_LOOP_END:
+						loops++;
+						break;
+					default:
+						break;
+					}
+					if (loops == 0) {
+						i = j;
+						break;
+					}
+				}
+
+				if (loops != 0)
+					die("interpret: ureachable state");
+			}
+			break;
 		}
 	}
+}
 
-	if (optind >= argc) {
-		goto usage;
-	}
+// #endregion
 
-	code = fs_read(argv[optind], &size);
+// #region operations
+void compile(char* file) {
+	char* code;
+	size_t size, ops_size;
+
+	code = fs_read(file, &size);
 
 	ops_size = (size + 1) * sizeof ops[0];
 	ops = malloc(ops_size);
@@ -276,25 +373,102 @@ int main(int argc, char** argv) {
 
 	while (optimize() > 0)
 		;
+}
 
+int contains_input_op(void) {
+	for (size_t i = 0;; i++) {
+		struct Op op = ops[i];
+		if (op.type == OP_NULL)
+			break;
+
+		if (op.type == OP_INPUT)
+			return true;
+	}
+	return false;
+}
+
+size_t emit_data_len;
+void emit_data_print_f(void* fp_, uint8_t ch) {
+	FILE* fp = fp_;
+	fprintf(fp, "%u, ", ch);
+	emit_data_len++;
+}
+
+void emit(char* output) {
 	FILE* fp = fopen(output, "w");
 	if (!fp) {
 		die_perror("fopen");
 	}
 
-	build(fp);
+	if (contains_input_op()) {
+		emit_fp(fp);
+	} else {
+		emit_data_len = 0;
+
+		fprintf(fp, "format ELF executable\n");
+		fprintf(fp, "dat: db ");
+		interpret(fp, emit_data_print_f, NULL);
+		fprintf(fp, "0\n");
+		fprintf(fp, "entry _start\n");
+		fprintf(fp, "_start:\n");
+		fprintf(fp, "; -- code begin\n");
+		fprintf(fp, "mov eax, 4\n");
+		fprintf(fp, "mov ebx, 1\n");
+		fprintf(fp, "mov ecx, dat\n");
+		fprintf(fp, "mov edx, %zu\n", emit_data_len);
+		fprintf(fp, "int 0x80\n");
+		fprintf(fp, "; code end --\n");
+		fprintf(fp, "mov eax, 1\n");
+		fprintf(fp, "mov ebx, 0\n");
+		fprintf(fp, "int 0x80\n");
+	}
 
 	fclose(fp);
+}
+// #endregion
 
-	free(ops);
+int main(int argc, char** argv) {
+	int opt;
+	char* output = "a.out";
+	bool do_compile = false;
+	bool do_run = false;
+	bool do_interpret = false;
 
-	if (compile) {
-		pid_t pid;
-		if ((pid = fork())) {
-			waitpid(pid, NULL, 0);
-		} else {
-			execvp("fasm", (char* const[]){output, output, NULL});
+	while ((opt = getopt(argc, argv, "o:hcri")) != -1) {
+		switch (opt) {
+		case 'i':
+			do_interpret = true;
+		case 'r':
+			do_run = true;
+		case 'c':
+			do_compile = true;
+			break;
+		case 'o':
+			output = optarg;
+			break;
+		case 'h':
+		default:
+			goto usage;
 		}
+	}
+
+	if (optind >= argc) {
+		goto usage;
+	}
+
+	compile(argv[optind]);
+
+	if (do_interpret) {
+		interpret(NULL, NULL, NULL);
+	}
+
+	emit(output);
+
+	if (do_compile) {
+		char* fasm_command = malloc(strlen(output) * 2 + 16);
+		sprintf(fasm_command, "fasm %s %s", output, output);
+		system(fasm_command);
+		free(fasm_command);
 
 		struct stat st;
 		if (stat(output, &st) == -1)
@@ -304,15 +478,20 @@ int main(int argc, char** argv) {
 		if (chmod(output, m) == -1)
 			die_perror("chmod");
 
-		if (run) {
+		if (do_run) {
 			char* real = realpath(output, NULL);
-			pid = execv(real, (char* const[]){NULL});
+
+			system(real);
+
+			free(real);
 		}
 	}
+
+	free(ops);
 
 	return 0;
 
 usage:
-	printf("usage: %s [-o output] [-h] [-c] [-r] name\n", argv[0]);
+	printf("usage: %s [-o output] [-h] [-c] [-r] [-i] name\n", argv[0]);
 	return 1;
 }
