@@ -12,6 +12,12 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+enum {
+	OPTIMIZE_NONE = 0,
+	OPTIMIZE_MID = 1,
+	OPTIMIZE_HIGH = 2,
+};
+
 // #region die
 
 void die(const char* s) {
@@ -354,7 +360,7 @@ void interpret(void* userdata, interpreter_output_func output_f, interpreter_inp
 // #endregion
 
 // #region operations
-void compile(char* file) {
+void compile(char* file, int optimize_level) {
 	char* code;
 	size_t size, ops_size;
 
@@ -371,8 +377,9 @@ void compile(char* file) {
 	buildops(code);
 	free(code);
 
-	while (optimize() > 0)
-		;
+	if (optimize_level >= OPTIMIZE_MID)
+		while (optimize() > 0)
+			;
 }
 
 int contains_input_op(void) {
@@ -394,15 +401,13 @@ void emit_data_print_f(void* fp_, uint8_t ch) {
 	emit_data_len++;
 }
 
-void emit(char* output) {
+void emit(char* output, int optimize_level) {
 	FILE* fp = fopen(output, "w");
 	if (!fp) {
 		die_perror("fopen");
 	}
 
-	if (contains_input_op()) {
-		emit_fp(fp);
-	} else {
+	if (!contains_input_op() && optimize_level >= OPTIMIZE_HIGH) {
 		emit_data_len = 0;
 
 		fprintf(fp, "format ELF executable\n");
@@ -421,6 +426,8 @@ void emit(char* output) {
 		fprintf(fp, "mov eax, 1\n");
 		fprintf(fp, "mov ebx, 0\n");
 		fprintf(fp, "int 0x80\n");
+	} else {
+		emit_fp(fp);
 	}
 
 	fclose(fp);
@@ -433,8 +440,9 @@ int main(int argc, char** argv) {
 	bool do_compile = false;
 	bool do_run = false;
 	bool do_interpret = false;
+	int optimize_level = OPTIMIZE_MID;
 
-	while ((opt = getopt(argc, argv, "o:hcri")) != -1) {
+	while ((opt = getopt(argc, argv, "o:hcriO:")) != -1) {
 		switch (opt) {
 		case 'i':
 			do_interpret = true;
@@ -447,6 +455,21 @@ int main(int argc, char** argv) {
 		case 'o':
 			output = optarg;
 			break;
+		case 'O':
+			switch (*optarg) {
+			case '0':
+				optimize_level = OPTIMIZE_NONE;
+				break;
+			case '1':
+				optimize_level = OPTIMIZE_MID;
+				break;
+			case '2':
+				optimize_level = OPTIMIZE_HIGH;
+				break;
+			default:
+				die("invalid optimization level, valid modes are: 0, 1, 2");
+			}
+			break;
 		case 'h':
 		default:
 			goto usage;
@@ -457,14 +480,14 @@ int main(int argc, char** argv) {
 		goto usage;
 	}
 
-	compile(argv[optind]);
+	compile(argv[optind], optimize_level);
 
 	if (do_interpret) {
 		interpret(NULL, NULL, NULL);
 		goto cleanup;
 	}
 
-	emit(output);
+	emit(output, optimize_level);
 
 	if (do_compile) {
 		char* fasm_command = malloc(strlen(output) * 2 + 16);
@@ -495,6 +518,6 @@ cleanup:
 	return 0;
 
 usage:
-	printf("usage: %s [-o output] [-h] [-c] [-r] [-i] name\n", argv[0]);
+	printf("usage: %s [-o output] [-h] [-c] [-r] [-i] [-O] name\n", argv[0]);
 	return 1;
 }

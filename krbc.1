@@ -11,6 +11,7 @@
 .Op Fl c
 .Op Fl r
 .Op Fl i
+.Op Fl O
 .Sh OPTIONS
 .Bl -tag -width Ds
 .It Fl o
@@ -23,4 +24,8 @@ Run "fasm" automatically on the output file
 Run the compiled output file automatically, adds -c implicitly
 .It Fl i
 Run in interpreter mode
+.It Fl O
+Set optimization level (valid values: 0, 1, 2)
+
+WARNING: Optimization level 2 is the highest level of optimization - it interprets the code to bake the output into the executable (only if the code doesn't contain an input instruction). Therefore, if the brainfuck code contains an infinite loop, the compiler will freeze.
 .El
