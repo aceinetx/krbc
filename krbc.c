@@ -227,21 +227,42 @@ int optimize(void) {
 		case OP_MOD:
 		case OP_MOVE:
 		case OP_OUTPUT:
-		case OP_INPUT:
-			if ((op + 1)->type == op->type) {
-				op->payload += (op + 1)->payload;
-				(op + 1)->type = OP_NOP;
+		case OP_INPUT: {
+			struct Op* next = op + 1;
+			if (next->type == op->type) {
+				op->payload += next->payload;
+				next->type = OP_NOP;
 				optimized++;
 			}
-			break;
+
+			/* ++++[-] pattern: set cell to 0 */ if (op->type == OP_MOD && (next->type == OP_OPT_SET)) {
+				op->type = OP_OPT_SET;
+				op->payload = next->payload;
+
+				next->type = OP_NOP;
+
+				optimized++;
+			}
+		} break;
 		case OP_LOOP_BEGIN: {
-			/* [-] [+] pattern: set cell to 0 */ {
+			/* [-] / [+] pattern: set cell to 0 */ {
 				struct Op* next1 = op + 1;
 				struct Op* next2 = op + 2;
 				if (next1->type == OP_MOD && (next1->payload == -1 || next1->payload == 1) && next2->type == OP_LOOP_END) {
 					next1->type = OP_NOP;
 					next2->type = OP_NOP;
 					op->type = OP_OPT_SET;
+
+					optimized++;
+				}
+			}
+		} break;
+		case OP_OPT_SET: {
+			/* [-][-] pattern: set cell to 0 */ {
+				struct Op* next = op + 1;
+				if (next->type == OP_OPT_SET) {
+					op->payload = next->payload;
+					next->type = OP_NOP;
 
 					optimized++;
 				}
