@@ -235,16 +235,17 @@ int optimize(void) {
 			}
 			break;
 		case OP_LOOP_BEGIN: {
-			/* [-] pattern: set cell to 0 */ {
+			/* [-] [+] pattern: set cell to 0 */ {
 				struct Op* next1 = op + 1;
 				struct Op* next2 = op + 2;
-				if (next1->type == OP_MOD && next1->payload == -1 && next2->type == OP_LOOP_END) {
+				if (next1->type == OP_MOD && (next1->payload == -1 || next1->payload == 1) && next2->type == OP_LOOP_END) {
 					next1->type = OP_NOP;
 					next2->type = OP_NOP;
 					op->type = OP_OPT_SET;
+
+					optimized++;
 				}
 			}
-			optimized++;
 		} break;
 		}
 		op++;
