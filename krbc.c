@@ -87,7 +87,7 @@ enum { OP_NULL = 0, OP_NOP, OP_MOD, OP_MOVE, OP_INPUT, OP_OUTPUT, OP_LOOP_BEGIN,
 
 struct Op {
 	unsigned int type : 4;
-	int count : 29;
+	int payload : 29;
 };
 
 struct Op* ops = NULL;
@@ -109,35 +109,35 @@ void emit_fp(FILE* ofd) {
 	while (op->type != OP_NULL) {
 		switch (op->type) {
 		case OP_MOD:
-			if (op->count == 1)
+			if (op->payload == 1)
 				fprintf(ofd, "inc byte [edi]\n");
-			else if (op->count == -1)
+			else if (op->payload == -1)
 				fprintf(ofd, "dec byte [edi]\n");
-			else if (op->count > 0)
-				fprintf(ofd, "add byte [edi], %d\n", op->count);
-			else if (op->count < 0)
-				fprintf(ofd, "sub byte [edi], %d\n", 0 - op->count);
+			else if (op->payload > 0)
+				fprintf(ofd, "add byte [edi], %d\n", op->payload);
+			else if (op->payload < 0)
+				fprintf(ofd, "sub byte [edi], %d\n", 0 - op->payload);
 			break;
 		case OP_MOVE:
-			if (op->count == 1)
+			if (op->payload == 1)
 				fprintf(ofd, "inc edi\n");
-			else if (op->count == -1)
+			else if (op->payload == -1)
 				fprintf(ofd, "dec edi\n");
-			else if (op->count > 0)
-				fprintf(ofd, "add edi, %d\n", op->count);
-			else if (op->count < 0)
-				fprintf(ofd, "sub edi, %d\n", 0 - op->count);
+			else if (op->payload > 0)
+				fprintf(ofd, "add edi, %d\n", op->payload);
+			else if (op->payload < 0)
+				fprintf(ofd, "sub edi, %d\n", 0 - op->payload);
 			break;
 		case OP_OUTPUT:
 			fprintf(ofd, "mov ecx, edi\n");
-			for (i = 0; i < op->count; i++) {
+			for (i = 0; i < op->payload; i++) {
 				fprintf(ofd, "mov eax, 4\n");
 				fprintf(ofd, "int 0x80\n");
 			}
 			break;
 		case OP_INPUT:
 			fprintf(ofd, "mov ecx, edi\n");
-			for (i = 0; i < op->count; i++) {
+			for (i = 0; i < op->payload; i++) {
 				fprintf(ofd, "mov eax, 3\n");
 				fprintf(ofd, "int 0x80\n");
 			}
@@ -155,7 +155,7 @@ void emit_fp(FILE* ofd) {
 			loop_p -= 1;
 			break;
 		case OP_OPT_SET:
-			fprintf(ofd, "mov byte [edi], %d\n", op->count);
+			fprintf(ofd, "mov byte [edi], %d\n", op->payload);
 			break;
 		default:
 			break;
@@ -202,7 +202,7 @@ int optimize(void) {
 		case OP_OUTPUT:
 		case OP_INPUT:
 			if ((op + 1)->type == op->type) {
-				op->count += (op + 1)->count;
+				op->payload += (op + 1)->payload;
 				(op + 1)->type = OP_NOP;
 				optimized++;
 			}
@@ -211,7 +211,7 @@ int optimize(void) {
 			/* [-] pattern: set cell to 0 */ {
 				struct Op* next1 = op + 1;
 				struct Op* next2 = op + 2;
-				if (next1->type == OP_MOD && next1->count == -1 && next2->type == OP_LOOP_END) {
+				if (next1->type == OP_MOD && next1->payload == -1 && next2->type == OP_LOOP_END) {
 					next1->type = OP_NOP;
 					next2->type = OP_NOP;
 					op->type = OP_OPT_SET;
@@ -305,17 +305,17 @@ void interpret(void* userdata, interpreter_output_func output_f, interpreter_inp
 		case OP_NULL:
 			break;
 		case OP_MOD:
-			memory[pointer] += op.count;
+			memory[pointer] += op.payload;
 			break;
 		case OP_MOVE:
-			pointer += op.count;
+			pointer += op.payload;
 			break;
 		case OP_INPUT:
-			while (op.count-- > 0)
+			while (op.payload-- > 0)
 				memory[pointer] = input_f(userdata);
 			break;
 		case OP_OUTPUT:
-			while (op.count-- > 0)
+			while (op.payload-- > 0)
 				output_f(userdata, memory[pointer]);
 			break;
 		case OP_LOOP_BEGIN:
@@ -369,7 +369,7 @@ void interpret(void* userdata, interpreter_output_func output_f, interpreter_inp
 			}
 			break;
 		case OP_OPT_SET:
-			memory[pointer] = op.count;
+			memory[pointer] = op.payload;
 			break;
 		}
 	}
