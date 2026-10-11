@@ -21,3 +21,4 @@ SpaceAfterTemplateKeyword: true
 ColumnLimit: 256
 DerivePointerAlignment: false
 PointerAlignment: Left
+AlignEscapedNewlines: Left

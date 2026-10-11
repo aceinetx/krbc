@@ -81,9 +81,19 @@ char* fs_read(const char* filename, size_t* out_size) {
 
 // #endregion
 
-// #region compiler
+// #region op
 
-enum { OP_NULL = 0, OP_NOP, OP_MOD, OP_MOVE, OP_INPUT, OP_OUTPUT, OP_LOOP_BEGIN, OP_LOOP_END, OP_OPT_SET };
+#define XOps X(OP_NULL), X(OP_NOP), X(OP_MOD), X(OP_MOVE), X(OP_INPUT), X(OP_OUTPUT), X(OP_LOOP_BEGIN), X(OP_LOOP_END), X(OP_OPT_SET)
+
+#define X(ident) ident
+enum { XOps };
+#undef X
+
+#define X(ident) #ident
+static const char* op_names[] = {XOps};
+#undef X
+
+#undef XOps
 
 struct Op {
 	unsigned int type : 4;
@@ -92,6 +102,23 @@ struct Op {
 
 struct Op* ops = NULL;
 int opcount = 0;
+
+// #endregion
+
+// #region debug
+
+void dump_ops() {
+	struct Op* op = ops;
+	puts("ops dump:");
+
+	for (; op->type != OP_NULL; op++) {
+		printf("%-15s %5d\n", op_names[op->type], op->payload);
+	}
+}
+
+// #endregion
+
+// #region compiler
 
 void emit_fp(FILE* ofd) {
 	int i;
@@ -395,9 +422,13 @@ void compile(char* file, int optimize_level) {
 	buildops(code);
 	free(code);
 
+	dump_ops();
+
 	if (optimize_level >= OPTIMIZE_MID)
 		while (optimize() > 0)
 			;
+
+	dump_ops();
 }
 
 int contains_input_op(void) {
@@ -458,9 +489,10 @@ int main(int argc, char** argv) {
 	bool do_compile = false;
 	bool do_run = false;
 	bool do_interpret = false;
+	bool do_dump_ops = false;
 	int optimize_level = OPTIMIZE_MID;
 
-	while ((opt = getopt(argc, argv, "o:hcriO:")) != -1) {
+	while ((opt = getopt(argc, argv, "o:hcridO:")) != -1) {
 		switch (opt) {
 		case 'i':
 			do_interpret = true;
@@ -472,6 +504,9 @@ int main(int argc, char** argv) {
 			break;
 		case 'o':
 			output = optarg;
+			break;
+		case 'd':
+			do_dump_ops = true;
 			break;
 		case 'O':
 			switch (*optarg) {
@@ -536,6 +571,6 @@ cleanup:
 	return 0;
 
 usage:
-	printf("usage: %s [-o output] [-h] [-c] [-r] [-i] [-O] name\n", argv[0]);
+	printf("usage: %s [-o output] [-h] [-c] [-r] [-i] [-O] [-d] name\n", argv[0]);
 	return 1;
 }
