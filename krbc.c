@@ -83,10 +83,10 @@ char* fs_read(const char* filename, size_t* out_size) {
 
 // #region compiler
 
-enum { OP_NULL = 0, OP_NOP, OP_MOD, OP_MOVE, OP_INPUT, OP_OUTPUT, OP_LOOP_BEGIN, OP_LOOP_END };
+enum { OP_NULL = 0, OP_NOP, OP_MOD, OP_MOVE, OP_INPUT, OP_OUTPUT, OP_LOOP_BEGIN, OP_LOOP_END, OP_OPT_SET };
 
 struct Op {
-	unsigned int type : 3;
+	unsigned int type : 4;
 	int count : 29;
 };
 
@@ -154,6 +154,9 @@ void emit_fp(FILE* ofd) {
 			fprintf(ofd, "e%d:\n", *loop_p);
 			loop_p -= 1;
 			break;
+		case OP_OPT_SET:
+			fprintf(ofd, "mov byte [edi], %d\n", op->count);
+			break;
 		default:
 			break;
 		}
@@ -204,6 +207,18 @@ int optimize(void) {
 				optimized++;
 			}
 			break;
+		case OP_LOOP_BEGIN: {
+			/* [-] pattern: set cell to 0 */ {
+				struct Op* next1 = op + 1;
+				struct Op* next2 = op + 2;
+				if (next1->type == OP_MOD && next1->count == -1 && next2->type == OP_LOOP_END) {
+					next1->type = OP_NOP;
+					next2->type = OP_NOP;
+					op->type = OP_OPT_SET;
+				}
+			}
+			optimized++;
+		} break;
 		}
 		op++;
 	}
@@ -353,6 +368,9 @@ void interpret(void* userdata, interpreter_output_func output_f, interpreter_inp
 					die("interpret: ureachable state");
 			}
 			break;
+		case OP_OPT_SET:
+			memory[pointer] = op.count;
+			break;
 		}
 	}
 }
@@ -366,7 +384,7 @@ void compile(char* file, int optimize_level) {
 
 	code = fs_read(file, &size);
 
-	ops_size = (size + 1) * sizeof ops[0];
+	ops_size = (size + 16) * sizeof ops[0];
 	ops = malloc(ops_size);
 	if (!ops) {
 		die("out of memory");
