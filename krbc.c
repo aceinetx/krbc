@@ -86,6 +86,8 @@ int main(int argc, char** argv) {
 	krbc_State* state = krbc_State_init();
 
 	krbc_load(state, optimize_level, code);
+	free(code);
+
 	if (do_dump_ops) {
 		krbc_dump_ops(state);
 	}
@@ -93,7 +95,7 @@ int main(int argc, char** argv) {
 	if (do_interpret) {
 		krbc_interpret(state, NULL, NULL, NULL);
 		krbc_State_deinit(state);
-		return 1;
+		return 0;
 	}
 
 	FILE* fp = fopen(output, "w");
