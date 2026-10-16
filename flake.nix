@@ -1,8 +1,8 @@
 {
-  description = "gf2";
+  description = "krbc";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -19,7 +19,7 @@
       in
       {
         packages.default = pkgs.stdenv.mkDerivation {
-          name = "krbc";
+          pname = "krbc";
           version = "1.0.0";
           src = self;
 
@@ -33,6 +33,8 @@
           '';
 
           installPhase = ''
+            runHook preInstall
+
             mkdir -p $out/bin
             mkdir -p $out/include
 
@@ -43,6 +45,8 @@
 
             mkdir -p $out/share/man/man1
             install -m 444 ./krbc.1 $out/share/man/man1/krbc.1
+
+            runHook postInstall
           '';
         };
 
