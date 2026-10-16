@@ -1,17 +1,13 @@
-// #define KRBC_IMPLEMENTATION
+#define KRBC_IMPLEMENTATION
 #include "krbc.h"
 
-int main() {
-	krbc_State state = krbc_State_init();
-	krbc_load(&state, "++++++++++[>+>+++>+++++++>++++++++++<<<<-]>>>++.>+.+++++++..+++.<<++.>+++++++++++++++.>.+++.------.--------.<<+.<.");
-	krbc_emit(&state, stdout, "");
+#include <errno.h>
+#include <fcntl.h>
+#include <getopt.h>
+#include <sys/stat.h>
 
-	krbc_State_deinit(&state);
-}
-
-/*
 void die(const char* s) {
-	puts(s);
+	printf("krbc: %s\n", s);
 	abort();
 }
 
@@ -30,13 +26,14 @@ int main(int argc, char** argv) {
 	int optimize_level = KRBC_OPTIMIZE_MID;
 	char* interp_baked_input = "";
 
-	while ((opt = getopt(argc, argv, "o:hcridO:b:")) != -1) {
+	// ----------------------------------------------------------
+	// parse args
+
+	while ((opt = getopt(argc, argv, "o:hcidO:b:")) != -1) {
 		switch (opt) {
 		case 'i':
 			do_interpret = true;
 			break;
-		case 'r':
-			do_run = true;
 		case 'c':
 			do_compile = true;
 			break;
@@ -78,15 +75,45 @@ int main(int argc, char** argv) {
 		goto usage;
 	}
 
-	compile(argv[optind], optimize_level, do_dump_ops);
-
-	if (do_interpret) {
-		interpret(NULL, NULL, NULL);
-		goto cleanup;
+	// ----------------------------------------------------------
+	// emit
+	char* code;
+	if (krbc_fs_read(argv[optind], NULL, &code) != KRBC_FS_READ_OK) {
+		puts("krbc: file read failed");
+		return 1;
 	}
 
-	emit(output, optimize_level, interp_baked_input);
+	krbc_State* state = krbc_State_init();
 
+	krbc_load(state, optimize_level, code);
+	if (do_dump_ops) {
+		krbc_dump_ops(state);
+	}
+
+	if (do_interpret) {
+		krbc_interpret(state, NULL, NULL, NULL);
+		krbc_State_deinit(state);
+		return 1;
+	}
+
+	FILE* fp = fopen(output, "w");
+	if (!fp) {
+		puts("krbc: output file open failed");
+		krbc_State_deinit(state);
+		return 1;
+	}
+
+	krbc_emit(state, fp, interp_baked_input);
+
+	const char* report = krbc_State_get_report(state);
+	if (*report) {
+		printf("krbc: report: %s\n", report);
+	}
+
+	fclose(fp);
+
+	// ----------------------------------------------------------
+	// compile
 	if (do_compile) {
 		char* fasm_command = malloc(strlen(output) * 2 + 16);
 		sprintf(fasm_command, "fasm %s %s", output, output);
@@ -100,23 +127,11 @@ int main(int argc, char** argv) {
 		m |= 0111;
 		if (chmod(output, m) == -1)
 			die_perror("chmod");
-
-		if (do_run) {
-			char* real = realpath(output, NULL);
-
-			system(real);
-
-			free(real);
-		}
 	}
-
-cleanup:
-	free(ops);
 
 	return 0;
 
 usage:
-	printf("usage: %s [-o output] [-h] [-c] [-r] [-i] [-O] [-d] [-b] name\n", argv[0]);
+	printf("usage: %s [-o output] [-h] [-c] [-i] [-O] [-d] [-b] name\n", argv[0]);
 	return 1;
 }
-*/

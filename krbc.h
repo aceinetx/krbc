@@ -1,16 +1,8 @@
-#define _XOPEN_SOURCE 600
-#include <errno.h>
-#include <fcntl.h>
-#include <getopt.h>
-#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
-#include <unistd.h>
 
 enum {
 	KRBC_OPTIMIZE_NONE = 0,
@@ -20,9 +12,18 @@ enum {
 
 // #region fs
 
-char* krbc_fs_read(const char* filename, size_t* out_size);
+enum {
+	KRBC_FS_READ_OK = 0,
+	KRBC_FS_READ_FOPEN,
+	KRBC_FS_READ_FSEEK,
+	KRBC_FS_READ_FTELL,
+	KRBC_FS_READ_FREAD,
+	KRBC_FS_READ_MALLOC,
+};
+
+int krbc_fs_read(const char* filename, size_t* out_size, char** out_text);
 #ifdef KRBC_IMPLEMENTATION
-char* krbc_fs_read(const char* filename, size_t* out_size) {
+int krbc_fs_read(const char* filename, size_t* out_size, char** out_text) {
 	FILE* file;
 	size_t fileSize;
 	char* buffer;
@@ -30,29 +31,29 @@ char* krbc_fs_read(const char* filename, size_t* out_size) {
 
 	file = fopen(filename, "rb");
 	if (!file) {
-		return NULL;
+		return KRBC_FS_READ_OK;
 	}
 
 	if (fseek(file, 0, SEEK_END)) {
 		fclose(file);
-		return NULL;
+		return KRBC_FS_READ_FSEEK;
 	}
 
 	fileSize = ftell(file);
 	if (fileSize < 0) {
 		fclose(file);
-		return NULL;
+		return KRBC_FS_READ_FTELL;
 	}
 
 	if (fseek(file, 0, SEEK_SET)) {
 		fclose(file);
-		return NULL;
+		return KRBC_FS_READ_FSEEK;
 	}
 
 	buffer = (char*)malloc(fileSize + 1);
 	if (!buffer) {
 		fclose(file);
-		return NULL;
+		return KRBC_FS_READ_MALLOC;
 	}
 
 	buffer[fileSize] = 0;
@@ -61,7 +62,7 @@ char* krbc_fs_read(const char* filename, size_t* out_size) {
 	if (charsRead != fileSize) {
 		free(buffer);
 		fclose(file);
-		return NULL;
+		return KRBC_FS_READ_FREAD;
 	}
 
 	fclose(file);
@@ -70,7 +71,8 @@ char* krbc_fs_read(const char* filename, size_t* out_size) {
 		*out_size = (size_t)fileSize;
 	}
 
-	return buffer;
+	*out_text = buffer;
+	return KRBC_FS_READ_OK;
 }
 #endif
 
@@ -102,19 +104,26 @@ typedef struct krbc_Op {
 
 // #region state
 
+#ifdef KRBC_IMPLEMENTATION
 typedef struct krbc_State {
-	struct krbc_Op* ops;
+	krbc_Op* ops;
 	int opcount;
 	int optimize_level;
+	char report[256];
 } krbc_State;
+#else
+typedef struct krbc_State krbc_State;
+#endif
 
-krbc_State krbc_State_init();
+krbc_State* krbc_State_init();
 void krbc_State_deinit(krbc_State* state);
+const char* krbc_State_get_report(krbc_State* state);
+
 #ifdef KRBC_IMPLEMENTATION
-krbc_State krbc_State_init() {
-	krbc_State state;
+krbc_State* krbc_State_init() {
+	krbc_State* state = malloc(sizeof *state);
 	memset(&state, 0, sizeof state);
-	state.optimize_level = KRBC_OPTIMIZE_MID;
+	state->optimize_level = KRBC_OPTIMIZE_MID;
 	return state;
 }
 
@@ -122,6 +131,11 @@ void krbc_State_deinit(krbc_State* state) {
 	if (state->ops)
 		free(state->ops);
 	memset(state, 0, sizeof *state);
+	free(state);
+}
+
+const char* krbc_State_get_report(krbc_State* state) {
+	return state->report;
 }
 #endif
 
@@ -320,8 +334,11 @@ void krbc_interpret(krbc_State* state, void* userdata, krbc_interpreter_output_f
 				for (size_t j = i;; j++) {
 					struct krbc_Op op = state->ops[j];
 
-					if (op.type == OP_NULL)
+					if (op.type == OP_NULL) {
+						strcpy(state->report, "unterminated loop");
 						return;
+					}
+
 					switch (op.type) {
 					case OP_LOOP_BEGIN:
 						loops++;
@@ -360,8 +377,10 @@ void krbc_interpret(krbc_State* state, void* userdata, krbc_interpreter_output_f
 					}
 				}
 
-				if (loops != 0)
+				if (loops != 0) {
+					strcpy(state->report, "unreachable state");
 					return;
+				}
 			}
 			break;
 		case OP_OPT_SET:
@@ -375,18 +394,22 @@ void krbc_interpret(krbc_State* state, void* userdata, krbc_interpreter_output_f
 // #endregion
 
 // #region operations
-void krbc_load(krbc_State* state, char* code);
+bool krbc_load(krbc_State* state, int optimize_level, char* code);
 void krbc_emit(krbc_State* state, FILE* fp, char* interp_baked_input);
 
 #ifdef KRBC_IMPLEMENTATION
-void krbc_load(krbc_State* state, char* code) {
+bool krbc_load(krbc_State* state, int optimize_level, char* code) {
+	state->optimize_level = optimize_level;
 	if (state->ops)
 		free(state->ops);
 
 	size_t len = strlen(code);
 	size_t size = (len + 16) * sizeof state->ops[0];
+	krbc_Op* ops = (krbc_Op*)malloc(size);
+	if (!ops)
+		return false;
 
-	state->ops = (krbc_Op*)malloc(size);
+	state->ops = ops;
 	memset(state->ops, 0, size);
 
 	krbc_buildops(state, code);
@@ -395,6 +418,8 @@ void krbc_load(krbc_State* state, char* code) {
 		while (krbc_optimize_once(state) > 0)
 			;
 	}
+
+	return true;
 }
 
 struct EmitInterpData {
@@ -527,7 +552,7 @@ void krbc_emit(krbc_State* state, FILE* fp, char* interp_baked_input) {
 		fprintf(fp, "mem: rb 30000\n");
 
 		if (loop_p != loop_stack && loop_c != 0) {
-			puts("warning: unmatched loops");
+			strcpy(state->report, "warning: unmatched loops");
 		}
 	}
 }

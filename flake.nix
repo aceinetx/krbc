@@ -23,17 +23,23 @@
           version = "1.0.0";
           src = self;
 
-          buildPhase = ''
-            cc krbc.c -o krbc -g -std=c99 -Wall -Wextra -Wpedantic -fsanitize=address
-          '';
-
           buildInputs = with pkgs; [
-            gcc
+            stdenv.cc.cc
           ];
+
+          buildPhase = ''
+            cc krbc.c -o krbc       -std=c99 -O3                           -Wall -Wextra -Wpedantic
+            cc krbc.c -o krbc_debug -std=c99 -O0 -g -fsanitize=address -lm -Wall -Wextra -Wpedantic
+          '';
 
           installPhase = ''
             mkdir -p $out/bin
-            cp krbc $out/bin/
+            mkdir -p $out/include
+
+            cp krbc       $out/bin/
+            cp krbc_debug $out/bin/
+
+            cp krbc.h $out/include
 
             mkdir -p $out/share/man/man1
             install -m 444 ./krbc.1 $out/share/man/man1/krbc.1
@@ -42,7 +48,7 @@
 
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
-            gcc
+            stdenv.cc.cc
           ];
         };
       }
