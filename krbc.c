@@ -427,7 +427,7 @@ void interpret(void* userdata, interpreter_output_func output_f, interpreter_inp
 // #endregion
 
 // #region operations
-void compile(char* file, int optimize_level) {
+void compile(char* file, int optimize_level, bool do_dump_ops) {
 	char* code;
 	size_t size, ops_size;
 
@@ -444,13 +444,15 @@ void compile(char* file, int optimize_level) {
 	buildops(code);
 	free(code);
 
-	dump_ops();
+	if (do_dump_ops)
+		dump_ops();
 
 	if (optimize_level >= OPTIMIZE_MID)
 		while (optimize() > 0)
 			;
 
-	dump_ops();
+	if (do_dump_ops)
+		dump_ops();
 }
 
 int contains_input_op(void) {
@@ -465,25 +467,39 @@ int contains_input_op(void) {
 	return false;
 }
 
-size_t emit_data_len;
-void emit_data_print_f(void* fp_, uint8_t ch) {
-	FILE* fp = fp_;
-	fprintf(fp, "%u, ", ch);
-	emit_data_len++;
+struct EmitInterpData {
+	FILE* output_fp;
+	size_t output_dat_len;
+	const char* baked_input;
+};
+
+uint8_t emit_interp_input(void* data_) {
+	struct EmitInterpData* data = (struct EmitInterpData*)data_;
+	if (*data->baked_input) {
+		data->baked_input++;
+		return data->baked_input[-1];
+	} else
+		return 0;
 }
 
-void emit(char* output, int optimize_level) {
+void emit_interp_output(void* data_, uint8_t ch) {
+	struct EmitInterpData* data = (struct EmitInterpData*)data_;
+	fprintf(data->output_fp, "%u, ", ch);
+	data->output_dat_len++;
+}
+
+void emit(char* output, int optimize_level, char* interp_baked_input) {
 	FILE* fp = fopen(output, "w");
 	if (!fp) {
 		die_perror("fopen");
 	}
 
-	if (!contains_input_op() && optimize_level >= OPTIMIZE_HIGH) {
-		emit_data_len = 0;
+	if ((!contains_input_op() || *interp_baked_input) && optimize_level >= OPTIMIZE_HIGH) {
+		struct EmitInterpData data = {fp, 0, interp_baked_input};
 
 		fprintf(fp, "format ELF executable\n");
 		fprintf(fp, "dat: db ");
-		interpret(fp, emit_data_print_f, NULL);
+		interpret(&data, emit_interp_output, emit_interp_input);
 		fprintf(fp, "0\n");
 		fprintf(fp, "entry _start\n");
 		fprintf(fp, "_start:\n");
@@ -491,7 +507,7 @@ void emit(char* output, int optimize_level) {
 		fprintf(fp, "mov eax, 4\n");
 		fprintf(fp, "mov ebx, 1\n");
 		fprintf(fp, "mov ecx, dat\n");
-		fprintf(fp, "mov edx, %zu\n", emit_data_len);
+		fprintf(fp, "mov edx, %zu\n", data.output_dat_len);
 		fprintf(fp, "int 0x80\n");
 		fprintf(fp, "; code end --\n");
 		fprintf(fp, "mov eax, 1\n");
@@ -513,8 +529,9 @@ int main(int argc, char** argv) {
 	bool do_interpret = false;
 	bool do_dump_ops = false;
 	int optimize_level = OPTIMIZE_MID;
+	char* interp_baked_input = "";
 
-	while ((opt = getopt(argc, argv, "o:hcridO:")) != -1) {
+	while ((opt = getopt(argc, argv, "o:hcridO:b:")) != -1) {
 		switch (opt) {
 		case 'i':
 			do_interpret = true;
@@ -527,10 +544,17 @@ int main(int argc, char** argv) {
 		case 'o':
 			output = optarg;
 			break;
+		case 'b':
+			interp_baked_input = optarg;
+			break;
 		case 'd':
 			do_dump_ops = true;
 			break;
 		case 'O':
+			if (!optarg) {
+				die("expected optimization level");
+			}
+
 			switch (*optarg) {
 			case '0':
 				optimize_level = OPTIMIZE_NONE;
@@ -555,14 +579,14 @@ int main(int argc, char** argv) {
 		goto usage;
 	}
 
-	compile(argv[optind], optimize_level);
+	compile(argv[optind], optimize_level, do_dump_ops);
 
 	if (do_interpret) {
 		interpret(NULL, NULL, NULL);
 		goto cleanup;
 	}
 
-	emit(output, optimize_level);
+	emit(output, optimize_level, interp_baked_input);
 
 	if (do_compile) {
 		char* fasm_command = malloc(strlen(output) * 2 + 16);
@@ -593,6 +617,6 @@ cleanup:
 	return 0;
 
 usage:
-	printf("usage: %s [-o output] [-h] [-c] [-r] [-i] [-O] [-d] name\n", argv[0]);
+	printf("usage: %s [-o output] [-h] [-c] [-r] [-i] [-O] [-d] [-b] name\n", argv[0]);
 	return 1;
 }
