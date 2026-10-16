@@ -20,6 +20,8 @@ enum {
 
 // #region fs
 
+char* krbc_fs_read(const char* filename, size_t* out_size);
+#ifdef KRBC_IMPLEMENTATION
 char* krbc_fs_read(const char* filename, size_t* out_size) {
 	FILE* file;
 	size_t fileSize;
@@ -70,6 +72,7 @@ char* krbc_fs_read(const char* filename, size_t* out_size) {
 
 	return buffer;
 }
+#endif
 
 // #endregion
 
@@ -81,9 +84,12 @@ char* krbc_fs_read(const char* filename, size_t* out_size) {
 enum { krbc_XOps };
 #undef X
 
+extern const char* krbc_op_names[];
+#ifdef KRBC_IMPLEMENTATION
 #define X(ident) #ident
-static const char* krbc_op_names[] = {krbc_XOps};
+const char* krbc_op_names[] = {krbc_XOps};
 #undef X
+#endif
 
 #undef krbc_XOps
 
@@ -102,6 +108,9 @@ typedef struct krbc_State {
 	int optimize_level;
 } krbc_State;
 
+krbc_State krbc_State_init();
+void krbc_State_deinit(krbc_State* state);
+#ifdef KRBC_IMPLEMENTATION
 krbc_State krbc_State_init() {
 	krbc_State state;
 	memset(&state, 0, sizeof state);
@@ -114,11 +123,14 @@ void krbc_State_deinit(krbc_State* state) {
 		free(state->ops);
 	memset(state, 0, sizeof *state);
 }
+#endif
 
 // #endregion
 
 // #region debug
 
+void krbc_dump_ops(krbc_State* state);
+#ifdef KRBC_IMPLEMENTATION
 void krbc_dump_ops(krbc_State* state) {
 	struct krbc_Op* op = state->ops;
 	puts("ops dump:");
@@ -127,11 +139,13 @@ void krbc_dump_ops(krbc_State* state) {
 		printf("%-15s %5d\n", krbc_op_names[op->type], op->payload);
 	}
 }
+#endif
 
 // #endregion
 
 // #region compiler
 
+#ifdef KRBC_IMPLEMENTATION
 static void krbc_shift(krbc_State* state) {
 	int i, shifted = 0;
 	for (i = 0; i < state->opcount; i++) {
@@ -244,14 +258,16 @@ static void krbc_buildops(krbc_State* state, char* code) {
 		c++;
 	}
 }
+#endif
 
 // #endregion
 
 // #region interpreter
 
-typedef void (*interpreter_output_func)(void* userdata, uint8_t cell);
-typedef uint8_t (*interpreter_input_func)(void* userdata);
-
+typedef void (*krbc_interpreter_output_func)(void* userdata, uint8_t cell);
+typedef uint8_t (*krbc_interpreter_input_func)(void* userdata);
+void krbc_interpret(krbc_State* state, void* userdata, krbc_interpreter_output_func output_f, krbc_interpreter_input_func input_f);
+#ifdef KRBC_IMPLEMENTATION
 static uint8_t interpret_default_input_func(void* userdata) {
 	(void)userdata;
 	return getchar();
@@ -262,7 +278,7 @@ static void interpret_default_output_func(void* userdata, uint8_t cell) {
 	putchar(cell);
 }
 
-void krbc_interpret(krbc_State* state, void* userdata, interpreter_output_func output_f, interpreter_input_func input_f) {
+void krbc_interpret(krbc_State* state, void* userdata, krbc_interpreter_output_func output_f, krbc_interpreter_input_func input_f) {
 	if (output_f == NULL)
 		output_f = interpret_default_output_func;
 	if (input_f == NULL)
@@ -354,10 +370,15 @@ void krbc_interpret(krbc_State* state, void* userdata, interpreter_output_func o
 		}
 	}
 }
+#endif
 
 // #endregion
 
 // #region operations
+void krbc_load(krbc_State* state, char* code);
+void krbc_emit(krbc_State* state, FILE* fp, char* interp_baked_input);
+
+#ifdef KRBC_IMPLEMENTATION
 void krbc_load(krbc_State* state, char* code) {
 	if (state->ops)
 		free(state->ops);
@@ -510,4 +531,6 @@ void krbc_emit(krbc_State* state, FILE* fp, char* interp_baked_input) {
 		}
 	}
 }
+#endif
+
 // #endregion

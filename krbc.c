@@ -1,4 +1,4 @@
-#define KRBC_IMPLEMENTATION
+// #define KRBC_IMPLEMENTATION
 #include "krbc.h"
 
 int main() {
