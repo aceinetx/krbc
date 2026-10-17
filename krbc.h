@@ -121,7 +121,7 @@ const char* krbc_State_get_report(krbc_State* state);
 
 #ifdef KRBC_IMPLEMENTATION
 krbc_State* krbc_State_init() {
-	krbc_State* state = malloc(sizeof *state);
+	krbc_State* state = (krbc_State*)malloc(sizeof *state);
 	memset(state, 0, sizeof *state);
 	state->optimize_level = KRBC_OPTIMIZE_MID;
 	return state;
